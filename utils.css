@@ -1,0 +1,76 @@
+/* 空状态 */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    color: #666;
+}
+
+.empty-state i {
+    font-size: 48px;
+    margin-bottom: 15px;
+    opacity: 0.5;
+}
+
+.empty-state h3 {
+    font-size: 16px;
+    margin-bottom: 8px;
+    color: #aaa;
+}
+
+.empty-state p {
+    font-size: 14px;
+    color: #666;
+}
+
+/* 边框框选 */
+.bounding-box {
+    position: absolute;
+    border: 2px solid #4caf50;
+    background: rgba(76, 175, 80, 0.1);
+    pointer-events: none;
+    z-index: 10;
+}
+
+.bounding-box::before {
+    content: attr(data-label);
+    position: absolute;
+    top: -24px;
+    left: 0;
+    background: #4caf50;
+    color: white;
+    padding: 2px 8px;
+    font-size: 11px;
+    border-radius: 4px;
+}
+
+/* 高亮框 */
+.highlight-box {
+    position: absolute;
+    border: 2px solid #ff9800;
+    background: rgba(255, 152, 0, 0.3);
+    pointer-events: none;
+    z-index: 10;
+    transform: scale(1.02);
+}
+
+/* 高亮遮罩 */
+.highlight-mask {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 5;
+}
+
+/* 信息面板 */
+.info-panel {
+    margin-bottom: 15px;
+    padding: 8px 12px;
+    background: rgba(76, 175, 80, 0.1);
+    border-radius: 8px;
+    font-size: 13px;
+    color: #4caf50;
+}

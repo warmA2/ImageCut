@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>图片元素切分工具</title>
+    <link rel="stylesheet" href="reset.css">
+    <link rel="stylesheet" href="layout.css">
+    <link rel="stylesheet" href="components.css">
+    <link rel="stylesheet" href="utils.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <div class="left-panel">
+            <div class="upload-area" id="uploadArea">
+                <i>📷</i>
+                <p>点击或拖拽上传PNG图片</p>
+            </div>
+            <input type="file" id="fileInput" accept="image/png" style="display: none;">
+
+            <div class="stats" id="stats" style="display: none;">
+                <div class="stat-item">
+                    <span>图片尺寸:</span>
+                    <span class="stat-value" id="imageSize">-</span>
+                </div>
+                <div class="stat-item">
+                    <span>元素数量:</span>
+                    <span class="stat-value" id="elementCount">0</span>
+                </div>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="showBoundingBox" checked>
+                    <span class="slider"></span>
+                    <span class="label-text">显示元素框</span>
+                </label>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="enableHoverHighlight" checked>
+                    <span class="slider"></span>
+                    <span class="label-text">悬浮高亮</span>
+                </label>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="excludeInner">
+                    <span class="slider"></span>
+                    <span class="label-text">剔除内部</span>
+                </label>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="enablePositionSync" checked>
+                    <span class="slider"></span>
+                    <span class="label-text">位置同步</span>
+                </label>
+                <label class="toggle-switch" id="bgRemoveToggle">
+                    <input type="checkbox" id="enableBgRemove">
+                    <span class="slider"></span>
+                    <span class="label-text">去除背景色</span>
+                </label>
+
+                <div class="bg-color-section" id="bgColorPanel" style="display: none;">
+                    <div class="bg-color-options">
+                        <button class="btn btn-small" id="pickBgColorBtn">选择背景色</button>
+                        <button class="btn btn-small btn-primary" id="removeBgBtn" disabled>应用去除</button>
+                    </div>
+                    <div class="tolerance-control">
+                        <span>容差:</span>
+                        <input type="range" id="toleranceSlider" min="0" max="50" value="10">
+                        <span id="toleranceValue">10</span>
+                    </div>
+                    <div class="bg-color-options">
+                        <label class="radio-option">
+                            <input type="radio" name="bgRemoveMode" value="edge" checked>
+                            <span>仅扣除边缘</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="bgRemoveMode" value="global">
+                            <span>扣除全局</span>
+                        </label>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="previewBgRemove">
+                        <span class="slider"></span>
+                        <span class="label-text">预览效果</span>
+                    </label>
+                    <div class="bg-color-preview" id="bgColorPreview" style="display: none;"></div>
+                </div>
+            </div>
+
+            <div class="canvas-container" id="canvasContainer">
+                <div class="empty-state">
+                    <i>🖼️</i>
+                    <p>请先上传图片</p>
+                </div>
+            </div>
+
+            <div class="controls">
+                <div class="split-mode-selector">
+                    <label class="radio-option">
+                        <input type="radio" name="splitMode" value="auto" checked>
+                        <span>自动检测</span>
+                    </label>
+                    <label class="radio-option">
+                        <input type="radio" name="splitMode" value="grid">
+                        <span>行列均分</span>
+                    </label>
+                    <label class="radio-option">
+                        <input type="radio" name="splitMode" value="position">
+                        <span>位置切图</span>
+                    </label>
+                </div>
+                <div class="grid-inputs" id="gridInputs" style="display: none;">
+                    <div class="grid-input-group">
+                        <label>行:</label>
+                        <input type="number" id="gridRows" min="1" max="20" value="2" style="width: 50px; padding: 4px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+                    <div class="grid-input-group">
+                        <label>列:</label>
+                        <input type="number" id="gridCols" min="1" max="20" value="2" style="width: 50px; padding: 4px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+                </div>
+                <div class="position-inputs" id="positionInputs" style="display: none;">
+                    <div class="position-input-group">
+                        <label>宽度:</label>
+                        <input type="number" id="cropWidth" min="10" max="5000" value="200" style="width: 60px; padding: 4px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+                    <div class="position-input-group">
+                        <label>高度:</label>
+                        <input type="number" id="cropHeight" min="10" max="5000" value="200" style="width: 60px; padding: 4px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+                    <div class="position-hint" style="font-size: 12px; color: #888; margin-top: 5px;">
+                        点击图片选择切图位置
+                    </div>
+                </div>
+                <button class="btn btn-primary" id="startBtn" disabled>
+                    <span>🔪</span>开始切图
+                </button>
+                <button class="btn btn-success" id="downloadBtn" disabled>
+                    <span>📥</span>一键下载全部
+                </button>
+                <button class="btn btn-warning" id="clearBtn" disabled>
+                    <span>🗑️</span>清空
+                </button>
+            </div>
+        </div>
+
+        <div class="right-panel">
+            <div class="header">
+                <h2>🎯 切分预览</h2>
+                <p style="font-size: 12px; color: #888;">共 <span id="previewCount">0</span> 个元素</p>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="enableBatchSelect">
+                    <span class="slider"></span>
+                </label>
+                <span style="font-size: 12px; color: #888; margin-left: 5px;">批量选择</span>
+                <div class="batch-actions">
+                    <button class="btn btn-sm" id="selectAllBtn" disabled>全选</button>
+                    <button class="btn btn-sm" id="selectInverseBtn" disabled>反选</button>
+                    <button class="btn btn-sm" id="clearSelectionBtn" disabled>取消</button>
+                </div>
+                <button class="btn btn-secondary" id="batchDownloadBtn" disabled
+                    style="margin-left: 10px; padding: 4px 12px; font-size: 12px;">
+                    <span>📥</span>批量下载 (<span id="selectedCount">0</span>)
+                </button>
+                <div class="slider-control">
+                    <label>图片尺寸:</label>
+                    <input type="range" id="sizeSlider" min="80" max="200" value="120">
+                    <span id="sizeValue">120px</span>
+                </div>
+            </div>
+            <div class="preview-grid" id="previewGrid">
+                <div class="empty-state" style="grid-column: span 2;">
+                    <i>👆</i>
+                    <p>上传图片后开始切图</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="js/app.js"></script>
+</body>
+
+</html>

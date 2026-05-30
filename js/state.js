@@ -1,0 +1,45 @@
+// 全局状态变量
+export let originalImage = null;
+export let processedImage = null;
+export let originalFileName = '';
+export let selectedItems = new Set();
+export let isSelecting = false;
+export let selectionStart = { x: 0, y: 0 };
+export let selectionBox = null;
+export let canvas = null;
+export let ctx = null;
+export let processedCanvas = null;
+export let processedCtx = null;
+export let elements = [];
+export let croppedImages = [];
+export let bgColor = null;
+export let isPickingBgColor = false;
+export let tolerance = 10;
+export let originalImageData = null;
+export let highlightBox = null;
+export let currentHoverElement = -1;
+export let maskLayer = null;
+export let cropPositionRect = null;
+
+// Setter 函数
+export function setOriginalImage(img) { originalImage = img; }
+export function setProcessedImage(img) { processedImage = img; }
+export function setOriginalFileName(name) { originalFileName = name; }
+export function setSelectedItems(items) { selectedItems = items; }
+export function setIsSelecting(val) { isSelecting = val; }
+export function setSelectionStart(x, y) { selectionStart = { x, y }; }
+export function setSelectionBox(box) { selectionBox = box; }
+export function setCanvas(c) { canvas = c; }
+export function setCtx(c) { ctx = c; }
+export function setProcessedCanvas(c) { processedCanvas = c; }
+export function setProcessedCtx(c) { processedCtx = c; }
+export function setElements(els) { elements = els; }
+export function setCroppedImages(imgs) { croppedImages = imgs; }
+export function setBgColor(color) { bgColor = color; }
+export function setIsPickingBgColor(val) { isPickingBgColor = val; }
+export function setTolerance(val) { tolerance = val; }
+export function setOriginalImageData(data) { originalImageData = data; }
+export function setHighlightBox(box) { highlightBox = box; }
+export function setCurrentHoverElement(index) { currentHoverElement = index; }
+export function setMaskLayer(layer) { maskLayer = layer; }
+export function setCropPositionRect(rect) { cropPositionRect = rect; }
