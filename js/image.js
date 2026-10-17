@@ -52,7 +52,9 @@ export function isTransparent(x, y, scale = 1) {
     const idx = (y * cachedWidth + x) * 4;
     const a = cachedImageData.data[idx + 3];
 
-    if (a < 128) {
+    // 降低透明阈值，尽可能保留抗锯齿边缘像素，避免边界框被压缩
+    // 只有几乎完全透明的像素才视为透明
+    if (a < 10) {
         return true;
     }
 
@@ -80,7 +82,9 @@ export function displayImage(img) {
 
     // 使用图片原始尺寸，但有最大限制
     const maxDisplayWidth = 560; // 左侧面板最大宽度 - padding
-    const maxDisplayHeight = 600;
+    // 高度上限按视口实际可用高度算，保证显示尺寸天生就在 CSS 约束内，
+    // 避免被 max-height 压缩后与叠加层坐标错位
+    const maxDisplayHeight = Math.min(600, Math.floor(window.innerHeight * 0.6));
     
     let displayWidth = img.width;
     let displayHeight = img.height;
@@ -95,10 +99,17 @@ export function displayImage(img) {
     // 设置canvas的显示尺寸（CSS尺寸）
     state.canvas.style.width = `${displayWidth}px`;
     state.canvas.style.height = `${displayHeight}px`;
+    state.canvas.style.position = 'absolute';
+    state.canvas.style.left = '0';
+    state.canvas.style.top = '0';
     
     // 设置canvas的实际像素尺寸为原始尺寸
     state.canvas.width = img.width;
     state.canvas.height = img.height;
+    
+    // 设置容器尺寸和canvas一致
+    elements.canvasContainer.style.width = `${displayWidth}px`;
+    elements.canvasContainer.style.height = `${displayHeight}px`;
     
     state.ctx.drawImage(img, 0, 0);
     elements.canvasContainer.appendChild(state.canvas);
@@ -115,6 +126,35 @@ export async function processFile(file) {
 
     state.setOriginalFileName(file.name.replace(/\.[^/.]+$/, ''));
 
+    // 重置所有状态
+    state.setElements([]);
+    state.setCroppedImages([]);
+    state.setCustomColXs([]);
+    state.setCustomRowYs([]);
+    state.setSelectedItems(new Set());
+    state.setManualMergeSelected(new Set());
+    state.setIsManualMergeMode(false);
+    state.setCropPositionRect(null);
+    state.setBgColor(null);
+    state.setOriginalImageData(null);
+    state.setHighlightBox(null);
+    state.setCurrentHoverElement(-1);
+    state.setProcessedCanvas(null);
+    state.setProcessedCtx(null);
+    state.setEnableUniformSize(false);
+    state.setUniformWidth(0);
+    state.setUniformHeight(0);
+    clearCachedImageData();
+
+    // 重置统一尺寸 UI
+    document.querySelectorAll('#enableUniformSize').forEach(el => el.checked = false);
+    const uniformSizeInputs = document.getElementById('uniformSizeInputs');
+    if (uniformSizeInputs) uniformSizeInputs.style.display = 'none';
+    const uniformWidth = document.getElementById('uniformWidth');
+    const uniformHeight = document.getElementById('uniformHeight');
+    if (uniformWidth) uniformWidth.value = 0;
+    if (uniformHeight) uniformHeight.value = 0;
+
     const img = new Image();
     img.onload = () => {
         state.setOriginalImage(img);
@@ -123,6 +163,25 @@ export async function processFile(file) {
         elements.clearBtn.disabled = false;
         elements.downloadBtn.disabled = true;
         elements.imageSize.textContent = `${img.width} × ${img.height}`;
+        
+        // 重置UI元素
+        elements.elementCount.textContent = '0';
+        elements.previewCount.textContent = '0';
+        
+        // 清除右侧预览区域
+        const previewGrid = document.getElementById('previewGrid');
+        if (previewGrid) {
+            previewGrid.innerHTML = '<div class="empty-state" style="grid-column: span 2;"><i>👆</i><p>上传图片后开始切图</p></div>';
+        }
+        
+        // 清除手动合并相关的UI
+        if (elements.confirmMergeBtn) {
+            elements.confirmMergeBtn.style.display = 'none';
+            elements.cancelMergeBtn.style.display = 'none';
+        }
+        
+        // 清除分割线
+        document.querySelectorAll('.grid-line').forEach(el => el.remove());
     };
     img.src = URL.createObjectURL(file);
 }
@@ -131,15 +190,15 @@ export async function processFile(file) {
 export function pickBgColorFromCanvas(e) {
     if (!state.ctx || !state.isPickingBgColor) return;
 
-    const rect = state.canvas.getBoundingClientRect();
-    const displayX = e.clientX - rect.left;
-    const displayY = e.clientY - rect.top;
-    
-    // 转换坐标到canvas像素坐标
-    const scaleX = state.canvas.width / rect.width;
-    const scaleY = state.canvas.height / rect.height;
-    const x = Math.floor(displayX * scaleX);
-    const y = Math.floor(displayY * scaleY);
+    // 以画布真实渲染尺寸为准换算显示坐标 → 图像像素坐标
+    const geo = state.getCanvasDisplayGeometry();
+    if (!geo) return;
+    const containerRect = elements.canvasContainer.getBoundingClientRect();
+    const displayX = e.clientX - containerRect.left - geo.offsetX;
+    const displayY = e.clientY - containerRect.top - geo.offsetY;
+
+    const x = Math.floor(displayX * geo.toImageX);
+    const y = Math.floor(displayY * geo.toImageY);
 
     const imageData = state.ctx.getImageData(x, y, 1, 1);
     const data = imageData.data;

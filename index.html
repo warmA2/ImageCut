@@ -103,9 +103,45 @@
                         <span>行列均分</span>
                     </label>
                     <label class="radio-option">
+                        <input type="radio" name="splitMode" value="custom">
+                        <span>自由行列</span>
+                    </label>
+                    <label class="radio-option">
                         <input type="radio" name="splitMode" value="position">
                         <span>位置切图</span>
                     </label>
+                </div>
+                <div class="auto-detection-options option-group" id="autoDetectionOptions" style="display: block; background: #eef2ff; border: 1px solid #c7d2fe;">
+                    <div class="option-group-head">
+                        <span class="option-group-title">自动检测设置</span>
+                        <button class="option-toggle" type="button">展开说明</button>
+                    </div>
+                    <div class="option-desc">
+                        <p><b>小元素容忍：</b>设置比例阈值，小于该比例的小物品会被合并到附近的大图中，而非单独切出。</p>
+                        <p><b>合并方向：</b>控制小元素优先向横向(行)还是纵向(列)的大元素合并，"不限"则取最近。</p>
+                        <p><b>边缘透明像素：</b>为每个切图元素四周添加一圈透明像素，避免裁切过紧、留白不足。</p>
+                    </div>
+                    <div class="option-row">
+                        <span class="inline-inputs">
+                            <span style="color:#666;">小元素容忍:</span>
+                            <input type="range" id="smallElementTolerance" min="0" max="100" value="0">
+                            <span id="smallElementToleranceValue">0%</span>
+                        </span>
+                        <span class="inline-inputs">
+                            <span style="color:#666;">合并方向:</span>
+                            <select id="smallElementMergeDir" style="padding: 2px 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
+                                <option value="any">不限</option>
+                                <option value="row">行优先</option>
+                                <option value="col">列优先</option>
+                            </select>
+                        </span>
+                        <label class="inline-option">
+                            <input type="checkbox" id="enableEdgePadding">
+                            <span>边缘透明像素</span>
+                            <input type="range" id="edgePaddingSize" min="0" max="20" value="5">
+                            <span id="edgePaddingValue">5px</span>
+                        </label>
+                    </div>
                 </div>
                 <div class="grid-inputs" id="gridInputs" style="display: none;">
                     <div class="grid-input-group">
@@ -117,6 +153,9 @@
                         <input type="number" id="gridCols" min="1" max="20" value="2" style="width: 50px; padding: 4px; border: 1px solid #ddd; border-radius: 4px;">
                     </div>
                 </div>
+                <div class="custom-grid-hint" id="customGridHint" style="display: none; font-size: 11px; color: #888; margin: 6px 0;">
+                    拖动图中的蓝色分割线可自由调整行列位置；修改上方行/列数量会重置为均分
+                </div>
                 <div class="position-inputs" id="positionInputs" style="display: none;">
                     <div class="position-input-group">
                         <label>宽度:</label>
@@ -126,12 +165,85 @@
                         <label>高度:</label>
                         <input type="number" id="cropHeight" min="10" max="5000" value="200" style="width: 60px; padding: 4px; border: 1px solid #ddd; border-radius: 4px;">
                     </div>
-                    <div class="position-hint" style="font-size: 12px; color: #888; margin-top: 5px;">
-                        点击图片选择切图位置
+                </div>
+                <div class="option-group" style="background: #f8fafc; border: 1px solid #e0e7ff;">
+                    <div class="option-group-head">
+                        <span class="option-group-title">输出与裁剪设置</span>
+                        <button class="option-toggle" type="button">展开说明</button>
+                    </div>
+                    <div class="option-desc">
+                        <p><b>统一输出尺寸：</b>勾选后所有切图统一输出为指定宽高，元素自动等比缩放居中；留空(0)则自动取最大元素尺寸。</p>
+                        <p><b>裁边(上右下左)：</b>切图前先把原图四边各裁掉指定像素，用于去除边框、水印等。</p>
+                    </div>
+                    <div class="option-row">
+                        <label class="inline-option">
+                            <input type="checkbox" id="enableUniformSize">
+                            <span>统一输出尺寸</span>
+                        </label>
+                        <span class="inline-inputs" id="uniformSizeInputs" style="display: none;">
+                            <label>宽:<input type="number" id="uniformWidth" min="0" max="5000" value="0" placeholder="自动"></label>
+                            <label>高:<input type="number" id="uniformHeight" min="0" max="5000" value="0" placeholder="自动"></label>
+                        </span>
+                        <span class="inline-inputs">
+                            <span style="color:#666;">裁边:</span>
+                            <label>上<input type="number" id="trimTop" min="0" max="5000" value="0"></label>
+                            <label>右<input type="number" id="trimRight" min="0" max="5000" value="0"></label>
+                            <label>下<input type="number" id="trimBottom" min="0" max="5000" value="0"></label>
+                            <label>左<input type="number" id="trimLeft" min="0" max="5000" value="0"></label>
+                        </span>
+                    </div>
+                </div>
+                <div class="option-group" style="background: #fff5f8; border: 1px solid #f48fb1;">
+                    <div class="option-group-head">
+                        <span class="option-group-title">裁剪后处理</span>
+                        <button class="option-toggle" type="button">展开说明</button>
+                    </div>
+                    <div class="option-desc">
+                        <p><b>去除外延描边：</b>把每张切图非透明图形最外圈 N 像素变透明，去掉外延描边/杂色，图片尺寸不变。</p>
+                        <p><b>边缘内缩：</b>把裁剪区域四边各向内裁掉 N 像素，直接切掉边缘杂色，输出尺寸随之变小。</p>
+                        <p><b>剔除孤立像素：</b>只保留连续的主体外轮廓(最大连通块)，剔除范围内的孤立杂点/杂色。</p>
+                    </div>
+                    <div class="option-row">
+                        <label class="inline-option">
+                            <input type="checkbox" id="enableInnerShrink">
+                            <span>去除外延描边</span>
+                            <span class="inline-inputs" id="innerShrinkInputs" style="display: none;">
+                                <label>剥边:<input type="number" id="innerShrinkSize" min="1" max="500" value="1"></label>
+                            </span>
+                        </label>
+                        <label class="inline-option">
+                            <input type="checkbox" id="enableEdgeInset">
+                            <span>边缘内缩</span>
+                            <span class="inline-inputs" id="edgeInsetInputs" style="display: none;">
+                                <label>内缩:<input type="number" id="edgeInsetSize" min="1" max="500" value="2"></label>
+                            </span>
+                        </label>
+                        <label class="inline-option">
+                            <input type="checkbox" id="enableIsolateRemove">
+                            <span>剔除孤立像素</span>
+                        </label>
                     </div>
                 </div>
                 <button class="btn btn-primary" id="startBtn" disabled>
                     <span>🔪</span>开始切图
+                </button>
+                <div class="manual-merge-controls" id="manualMergeControls" style="display: none; margin-top: 12px; padding: 12px; background: #fff3e0; border-radius: 8px; border: 1px solid #ffb74d;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                        <span style="font-weight: bold; color: #e65100;">手动合并模式</span>
+                        <span id="manualMergeCount" style="background: #ff9800; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px;">0</span>
+                    </div>
+                    <div style="font-size: 12px; color: #666; margin-bottom: 8px;">
+                        点击左侧图片中的元素框进行选择，选中后会高亮显示
+                    </div>
+                    <button class="btn btn-warning" id="confirmMergeBtn" disabled style="width: 100%;">
+                        <span>🔗</span>确认合并 (<span id="mergeCount">0</span>)
+                    </button>
+                    <button class="btn btn-small" id="cancelMergeBtn" style="width: 100%; margin-top: 8px;">
+                        <span>✖️</span>取消
+                    </button>
+                </div>
+                <button class="btn btn-secondary" id="manualMergeBtn" style="margin-top: 12px;">
+                    <span>🔗</span>手动合并
                 </button>
                 <button class="btn btn-success" id="downloadBtn" disabled>
                     <span>📥</span>一键下载全部
@@ -172,6 +284,16 @@
                     <p>上传图片后开始切图</p>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- 单图放大预览遮罩层 -->
+    <div class="lightbox" id="lightbox" style="display: none;">
+        <div class="lightbox-backdrop"></div>
+        <div class="lightbox-content">
+            <button class="lightbox-close" id="lightboxClose" title="关闭 (Esc)">✕</button>
+            <img class="lightbox-img" id="lightboxImg" src="" alt="">
+            <div class="lightbox-caption" id="lightboxCaption"></div>
         </div>
     </div>
 

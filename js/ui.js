@@ -25,24 +25,25 @@ export function unhighlightPreviewItem() {
 
 // 绘制边界框
 export function drawBoundingBoxes() {
-    if (!elements.showBoundingBox.checked) return;
     if (!state.canvas) return;
 
-    const canvasRect = state.canvas.getBoundingClientRect();
-    const containerRect = elements.canvasContainer.getBoundingClientRect();
-    const offsetX = canvasRect.left - containerRect.left;
-    const offsetY = canvasRect.top - containerRect.top;
+    // 自由行列模式的分割线同时也是拖拽手柄，不受"显示边界框"开关影响
+    if (getSplitMode() === 'custom') {
+        removeCustomGridLines();
+        renderCustomGridLines();
+    }
+
+    if (!elements.showBoundingBox.checked) return;
 
     // 判断是否是行列切图模式
     const isGridMode = state.elements.length > 0 && state.elements[0].row !== undefined;
 
-    // 计算缩放比例 - canvas的显示尺寸 vs 实际像素尺寸
-    const displayWidth = canvasRect.width;
-    const displayHeight = canvasRect.height;
-    const scaleX = displayWidth / state.canvas.width;
-    const scaleY = displayHeight / state.canvas.height;
+    // 以画布真实渲染尺寸为准计算缩放比例与偏移
+    const geo = state.getCanvasDisplayGeometry();
+    if (!geo) return;
+    const { scaleX, scaleY, offsetX, offsetY, width: displayWidth, height: displayHeight } = geo;
 
-    if (isGridMode) {
+    if (isGridMode && getSplitMode() === 'grid') {
         // 绘制行列分割线
         const rows = Math.max(...state.elements.map(e => e.row));
         const cols = Math.max(...state.elements.map(e => e.col));
@@ -76,7 +77,7 @@ export function drawBoundingBoxes() {
         const rect = document.createElement('div');
         rect.className = 'bounding-box';
         
-        // 所有模式下都使用缩放后的坐标
+        // 所有模式下都使用缩放后的坐标（含画布在容器内的偏移）
         rect.style.left = `${offsetX + box.x * scaleX}px`;
         rect.style.top = `${offsetY + box.y * scaleY}px`;
         rect.style.width = `${box.width * scaleX}px`;
@@ -96,6 +97,21 @@ export function drawBoundingBoxes() {
 
         rect.addEventListener('click', (e) => {
             e.stopPropagation();
+            
+            // 如果是手动合并模式，处理合并选择
+            if (state.isManualMergeMode) {
+                if (state.manualMergeSelected.has(index)) {
+                    state.manualMergeSelected.delete(index);
+                } else {
+                    state.manualMergeSelected.add(index);
+                }
+                state.setManualMergeSelected(state.manualMergeSelected);
+                ui.updateManualMergeSelection();
+                ui.updateManualMergeCount();
+                return;
+            }
+            
+            // 批量选择模式
             if (elements.enableBatchSelect.checked) {
                 const previewItems = document.querySelectorAll('.preview-item');
                 const item = previewItems[index];
@@ -119,6 +135,8 @@ export function toggleBoundingBoxes() {
         box.style.display = elements.showBoundingBox.checked ? 'block' : 'none';
     });
     lines.forEach(line => {
+        // 自由行列的分割线是拖拽手柄，始终显示
+        if (line.classList.contains('custom-grid-line')) return;
         line.style.display = elements.showBoundingBox.checked ? 'block' : 'none';
     });
 }
@@ -145,21 +163,15 @@ export function highlightElement(index) {
     } else {
         const element = state.elements[index];
         if (element) {
-            const canvasRect = state.canvas.getBoundingClientRect();
-            const containerRect = elements.canvasContainer.getBoundingClientRect();
-            const offsetX = canvasRect.left - containerRect.left;
-            const offsetY = canvasRect.top - containerRect.top;
-            
-            // 计算缩放比例
-            const displayWidth = canvasRect.width;
-            const displayHeight = canvasRect.height;
-            const scaleX = displayWidth / state.canvas.width;
-            const scaleY = displayHeight / state.canvas.height;
+            // 以画布真实渲染尺寸为准计算缩放比例与偏移
+            const geo = state.getCanvasDisplayGeometry();
+            if (!geo) return;
+            const { scaleX, scaleY, offsetX, offsetY } = geo;
 
             state.setHighlightBox(document.createElement('div'));
             state.highlightBox.className = 'highlight-box';
             
-            // 使用缩放后的坐标
+            // 使用缩放后的坐标（含画布在容器内的偏移）
             state.highlightBox.style.left = `${offsetX + element.x * scaleX}px`;
             state.highlightBox.style.top = `${offsetY + element.y * scaleY}px`;
             state.highlightBox.style.width = `${element.width * scaleX}px`;
@@ -173,6 +185,8 @@ export function highlightElement(index) {
             state.maskLayer.style.position = 'absolute';
             state.maskLayer.style.top = `${offsetY}px`;
             state.maskLayer.style.left = `${offsetX}px`;
+            state.maskLayer.style.width = `${geo.width}px`;
+            state.maskLayer.style.height = `${geo.height}px`;
             state.maskLayer.style.zIndex = '5';
 
             const maskCtx = state.maskLayer.getContext('2d');
@@ -208,7 +222,157 @@ export function unhighlightElement() {
     }
 }
 
-// 更新预览网格
+// ===== 单图放大预览（Lightbox） =====
+let lightboxInitialized = false;
+let lbScale = 1;
+let lbTranslateX = 0;
+let lbTranslateY = 0;
+let lbDragging = false;
+let lbDragStartX = 0;
+let lbDragStartY = 0;
+
+function applyLbTransform(lightboxImg) {
+    lightboxImg.style.transform =
+        `translate(${lbTranslateX}px, ${lbTranslateY}px) scale(${lbScale})`;
+}
+
+function resetLbTransform(lightboxImg) {
+    lbScale = 1;
+    lbTranslateX = 0;
+    lbTranslateY = 0;
+    applyLbTransform(lightboxImg);
+}
+
+function updateLbCaption(caption, item, label) {
+    const zoomText = lbScale === 1 ? '' : ` · 缩放 ${Math.round(lbScale * 100)}%`;
+    caption.textContent =
+        `元素 ${label} · ${Math.round(item.width)}×${Math.round(item.height)}` +
+        zoomText + ' · 滚轮缩放 · 双击复位';
+}
+
+function initLightbox() {
+    if (lightboxInitialized) return;
+    lightboxInitialized = true;
+
+    const lightbox = document.getElementById('lightbox');
+    const lightboxImg = document.getElementById('lightboxImg');
+    lightboxImg.draggable = false;
+    const caption = document.getElementById('lightboxCaption');
+    const closeBtn = document.getElementById('lightboxClose');
+    const backdrop = lightbox.querySelector('.lightbox-backdrop');
+
+    const closeLightbox = () => {
+        lightbox.style.display = 'none';
+        resetLbTransform(lightboxImg);
+    };
+
+    closeBtn.addEventListener('click', closeLightbox);
+    backdrop.addEventListener('click', closeLightbox);
+
+    // 滚轮缩放（以鼠标位置为中心）；绑定在整个遮罩层上，光标略偏出图片也能缩放
+    lightbox.addEventListener('wheel', (e) => {
+        if (lightbox.style.display === 'none') return;
+        e.preventDefault();
+
+        const rect = lightboxImg.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        // 鼠标相对图片中心的位置（当前缩放下的屏幕坐标）
+        const offsetX = e.clientX - cx;
+        const offsetY = e.clientY - cy;
+
+        const oldScale = lbScale;
+        const oldTx = lbTranslateX;
+        const oldTy = lbTranslateY;
+        const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+        lbScale = Math.min(20, Math.max(0.1, lbScale * factor));
+
+        // 缩放倍数接近 1 时吸附回 1，消除浮点累积误差并同时复位平移
+        if (Math.abs(lbScale - 1) < 0.005) {
+            lbScale = 1;
+            lbTranslateX = 0;
+            lbTranslateY = 0;
+            applyLbTransform(lightboxImg);
+        } else {
+            // 调整平移量，使鼠标指向的图片点保持不动（考虑已有的平移量）
+            const ratio = lbScale / oldScale;
+            lbTranslateX = e.clientX - cx - offsetX * ratio + oldTx;
+            lbTranslateY = e.clientY - cy - offsetY * ratio + oldTy;
+            applyLbTransform(lightboxImg);
+        }
+        const item = state.croppedImages[lightboxImg.dataset.index];
+        if (item) {
+            const element = state.elements[lightboxImg.dataset.index];
+            const isGridMode = element && element.row !== undefined && element.col !== undefined;
+            const label = isGridMode ? `${element.row}-${element.col}` : `${item.index}`;
+            updateLbCaption(caption, item, label);
+        }
+    }, { passive: false });
+
+    // 双击复位
+    lightboxImg.addEventListener('dblclick', () => {
+        resetLbTransform(lightboxImg);
+        const item = state.croppedImages[lightboxImg.dataset.index];
+        if (item) {
+            const element = state.elements[lightboxImg.dataset.index];
+            const isGridMode = element && element.row !== undefined && element.col !== undefined;
+            const label = isGridMode ? `${element.row}-${element.col}` : `${item.index}`;
+            updateLbCaption(caption, item, label);
+        }
+    });
+
+    // 按住拖拽平移
+    lightboxImg.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        lbDragging = true;
+        lbDragStartX = e.clientX - lbTranslateX;
+        lbDragStartY = e.clientY - lbTranslateY;
+        lightboxImg.style.cursor = 'grabbing';
+    });
+    document.addEventListener('mousemove', (e) => {
+        if (!lbDragging) return;
+        lbTranslateX = e.clientX - lbDragStartX;
+        lbTranslateY = e.clientY - lbDragStartY;
+        applyLbTransform(lightboxImg);
+    });
+    document.addEventListener('mouseup', () => {
+        if (lbDragging) {
+            lbDragging = false;
+            lightboxImg.style.cursor = 'grab';
+        }
+    });
+
+    // Esc 关闭
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && lightbox.style.display !== 'none') {
+            closeLightbox();
+        }
+    });
+}
+
+function openLightbox(index) {
+    initLightbox();
+
+    const item = state.croppedImages[index];
+    if (!item) return;
+
+    const lightbox = document.getElementById('lightbox');
+    const lightboxImg = document.getElementById('lightboxImg');
+    const caption = document.getElementById('lightboxCaption');
+
+    const element = state.elements[index];
+    const isGridMode = element && element.row !== undefined && element.col !== undefined;
+    const label = isGridMode ? `${element.row}-${element.col}` : `${item.index}`;
+
+    lightboxImg.dataset.index = index;
+    lightboxImg.src = item.canvas.toDataURL('image/png');
+    lightboxImg.alt = `元素 ${label}`;
+    lightboxImg.style.cursor = 'grab';
+    resetLbTransform(lightboxImg);
+    updateLbCaption(caption, item, label);
+    lightbox.style.display = 'flex';
+}
+
 export function updatePreviewGrid() {
     elements.previewGrid.innerHTML = '';
 
@@ -250,10 +414,21 @@ export function updatePreviewGrid() {
             <span style="float:right">${Math.round(item.width)}×${Math.round(item.height)}</span>
         `;
 
+        // 放大预览按钮（悬停预览项时显示在右上角）
+        const zoomBtn = document.createElement('button');
+        zoomBtn.className = 'preview-zoom-btn';
+        zoomBtn.title = '放大预览';
+        zoomBtn.textContent = '🔍';
+        zoomBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openLightbox(index);
+        });
+
         previewItem.appendChild(checkbox);
         previewItem.appendChild(checkboxCustom);
         previewItem.appendChild(img);
         previewItem.appendChild(previewInfo);
+        previewItem.appendChild(zoomBtn);
 
         if (state.selectedItems.has(index)) {
             previewItem.classList.add('selected');
@@ -325,4 +500,158 @@ export function downloadSingle(index) {
     link.href = item.canvas.toDataURL('image/png');
     link.download = `${state.originalFileName}_${item.index}.png`;
     link.click();
+}
+
+// 更新手动合并选中的样式
+export function updateManualMergeSelection() {
+    const boxes = document.querySelectorAll('.bounding-box');
+    boxes.forEach((box, index) => {
+        if (state.manualMergeSelected.has(index)) {
+            box.classList.add('selected');
+        } else {
+            box.classList.remove('selected');
+        }
+    });
+}
+
+// 更新手动合并计数显示
+export function updateManualMergeCount() {
+    const count = state.manualMergeSelected.size;
+    elements.manualMergeCount.textContent = count;
+    elements.mergeCount.textContent = count;
+    elements.confirmMergeBtn.disabled = count < 2;
+}
+
+// ===== 自由行列：可拖拽分割线 =====
+// 分割线拖动结束后触发的回调（由 app.js 注册，用于按新位置重建单元格）
+let customGridChangeHandler = null;
+// 分割线之间的最小间距（原图像素）
+const CUSTOM_GRID_MIN_GAP = 10;
+// 分割线热区宽度的一半（显示像素）
+const CUSTOM_GRID_HIT_OFFSET = 4;
+
+export function setCustomGridChangeHandler(fn) {
+    customGridChangeHandler = fn;
+}
+
+// 当前选中的切图模式
+function getSplitMode() {
+    return document.querySelector('input[name="splitMode"]:checked')?.value || 'auto';
+}
+
+// 裁边后的有效区域（与 detection.getTrimBounds 保持一致）
+function getTrimBounds() {
+    const width = state.canvas.width;
+    const height = state.canvas.height;
+    const left = Math.max(0, Math.floor(state.trimLeft) || 0);
+    const top = Math.max(0, Math.floor(state.trimTop) || 0);
+    const right = Math.max(left, Math.min(width, width - Math.max(0, Math.floor(state.trimRight) || 0)));
+    const bottom = Math.max(top, Math.min(height, height - Math.max(0, Math.floor(state.trimBottom) || 0)));
+    return { left, top, right, bottom };
+}
+
+// 移除自由行列的分割线
+export function removeCustomGridLines() {
+    document.querySelectorAll('.custom-grid-line').forEach(el => el.remove());
+}
+
+// 绘制可拖拽的行列分割线
+export function renderCustomGridLines() {
+    if (!state.canvas) return;
+
+    // 以画布真实渲染尺寸为准，保证线条与实际切图位置一致
+    const geo = state.getCanvasDisplayGeometry();
+    if (!geo) return;
+    const { scaleX, scaleY, offsetX, offsetY, width: displayWidth, height: displayHeight } = geo;
+
+    state.customColXs.forEach((x, index) => {
+        const line = document.createElement('div');
+        line.className = 'grid-line custom-grid-line vertical';
+        line.style.left = `${offsetX + x * scaleX - CUSTOM_GRID_HIT_OFFSET}px`;
+        line.style.top = `${offsetY}px`;
+        line.style.width = `${CUSTOM_GRID_HIT_OFFSET * 2 + 2}px`;
+        line.style.height = `${displayHeight}px`;
+        attachCustomLineDrag(line, 'col', index);
+        elements.canvasContainer.appendChild(line);
+    });
+
+    state.customRowYs.forEach((y, index) => {
+        const line = document.createElement('div');
+        line.className = 'grid-line custom-grid-line horizontal';
+        line.style.left = `${offsetX}px`;
+        line.style.top = `${offsetY + y * scaleY - CUSTOM_GRID_HIT_OFFSET}px`;
+        line.style.width = `${displayWidth}px`;
+        line.style.height = `${CUSTOM_GRID_HIT_OFFSET * 2 + 2}px`;
+        attachCustomLineDrag(line, 'row', index);
+        elements.canvasContainer.appendChild(line);
+    });
+}
+
+// 给分割线绑定拖拽：拖动过程中只移动线本身，松手后再重建单元格
+function attachCustomLineDrag(line, axis, index) {
+    line.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const isCol = axis === 'col';
+        line.classList.add('dragging');
+
+        const onMove = (ev) => {
+            if (!state.canvas) return;
+
+            // 以画布真实渲染尺寸为准：显示坐标(相对画布) → 原图像素坐标
+            const geo = state.getCanvasDisplayGeometry();
+            if (!geo) return;
+            const toImage = isCol ? geo.toImageX : geo.toImageY;
+
+            const containerRect = elements.canvasContainer.getBoundingClientRect();
+            const offset = isCol
+                ? ev.clientX - containerRect.left - geo.offsetX
+                : ev.clientY - containerRect.top - geo.offsetY;
+
+            const coords = isCol ? state.customColXs : state.customRowYs;
+            // 夹在"裁边后的有效区域"与相邻分割线之间，保证顺序不乱且留出最小间距
+            const trim = getTrimBounds();
+            const areaStart = isCol ? trim.left : trim.top;
+            const areaEnd = isCol ? trim.right : trim.bottom;
+            // 收缩一个最小间距，避免线落到有效区域边界上而被 splitByCustomGrid 丢弃
+            const innerStart = areaStart + CUSTOM_GRID_MIN_GAP;
+            const innerEnd = areaEnd - CUSTOM_GRID_MIN_GAP;
+            if (innerStart > innerEnd) return;
+            const lower = Math.max(
+                innerStart,
+                index === 0 ? innerStart : coords[index - 1] + CUSTOM_GRID_MIN_GAP
+            );
+            const upper = Math.min(
+                innerEnd,
+                index === coords.length - 1
+                    ? innerEnd
+                    : coords[index + 1] - CUSTOM_GRID_MIN_GAP
+            );
+            const value = Math.max(lower, Math.min(upper, Math.round(offset * toImage)));
+
+            const newCoords = [...coords];
+            newCoords[index] = value;
+            if (isCol) {
+                state.setCustomColXs(newCoords);
+            } else {
+                state.setCustomRowYs(newCoords);
+            }
+
+            // 实时把线移动到新位置（视觉反馈）
+            const base = isCol ? geo.offsetX : geo.offsetY;
+            const displayPos = base + value / toImage - CUSTOM_GRID_HIT_OFFSET;
+            line.style[isCol ? 'left' : 'top'] = `${displayPos}px`;
+        };
+
+        const onUp = () => {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            line.classList.remove('dragging');
+            if (customGridChangeHandler) customGridChangeHandler();
+        };
+
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    });
 }

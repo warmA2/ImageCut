@@ -154,6 +154,7 @@
     transition: transform 0.2s;
     flex-direction: column;
     min-height: 180px;
+    position: relative;
 }
 
 .preview-item:hover {
@@ -178,6 +179,118 @@
     color: white;
     font-size: 12px;
     font-weight: bold;
+}
+
+/* 预览项放大按钮 */
+.preview-zoom-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 6px;
+    background: rgba(102, 126, 234, 0.9);
+    color: white;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s, background 0.2s;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.preview-item:hover .preview-zoom-btn {
+    opacity: 1;
+}
+
+.preview-zoom-btn:hover {
+    background: rgba(102, 126, 234, 1);
+}
+
+/* 全屏放大预览遮罩层 */
+.lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: auto;
+}
+
+.lightbox-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.82);
+}
+
+.lightbox-content {
+    position: relative;
+    max-width: 92vw;
+    max-height: 92vh;
+    margin: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.lightbox-img {
+    max-width: 92vw;
+    max-height: 82vh;
+    object-fit: contain;
+    border-radius: 4px;
+    transform-origin: center center;
+    user-select: none;
+    -webkit-user-drag: none;
+    background-color: #fff;
+    background-image: linear-gradient(45deg, #ddd 25%, transparent 25%),
+                      linear-gradient(-45deg, #ddd 25%, transparent 25%),
+                      linear-gradient(45deg, transparent 75%, #ddd 75%),
+                      linear-gradient(-45deg, transparent 75%, #ddd 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+    cursor: grab;
+}
+
+.lightbox-img:active {
+    cursor: grabbing;
+}
+
+.lightbox-caption {
+    margin-top: 10px;
+    color: #eee;
+    font-size: 13px;
+    background: rgba(0, 0, 0, 0.5);
+    padding: 4px 14px;
+    border-radius: 12px;
+}
+
+.lightbox-close {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 50%;
+    background: #667eea;
+    color: white;
+    font-size: 16px;
+    cursor: pointer;
+    z-index: 1001;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.lightbox-close:hover {
+    background: #5568d3;
 }
 
 /* 按钮样式 */
@@ -334,15 +447,14 @@
     width: fit-content;
     height: fit-content;
     min-height: 200px;
-    max-height: 60vh;
     box-shadow: inset 0 2px 10px rgba(102, 126, 234, 0.05);
     border: 1px solid #e0e7ff;
 }
 
+/* 尺寸完全由 JS 按原图比例控制：不能再加 max-width/max-height/object-fit，
+   否则画布元素盒与位图比例不一致会产生 letterbox，导致叠加层与实际切图位置错位 */
 .canvas-container canvas {
-    max-width: 100%;
-    max-height: 60vh;
-    object-fit: contain;
+    display: block;
 }
 
 /* 上传区域 */
@@ -450,6 +562,49 @@
     box-shadow: 0 0 8px rgba(102, 126, 234, 0.4);
 }
 
+/* 自由行列：可拖拽分割线（加宽热区，中间显示细线） */
+.custom-grid-line {
+    pointer-events: auto;
+    background: none !important;
+    box-shadow: none !important;
+    z-index: 16;
+}
+
+.custom-grid-line::after {
+    content: '';
+    position: absolute;
+    background: linear-gradient(to bottom, rgba(102, 126, 234, 0.85), rgba(139, 92, 246, 0.85));
+    box-shadow: 0 0 8px rgba(102, 126, 234, 0.5);
+}
+
+.custom-grid-line.vertical {
+    cursor: col-resize;
+}
+
+.custom-grid-line.vertical::after {
+    left: 4px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+}
+
+.custom-grid-line.horizontal {
+    cursor: row-resize;
+}
+
+.custom-grid-line.horizontal::after {
+    top: 4px;
+    left: 0;
+    right: 0;
+    height: 2px;
+}
+
+.custom-grid-line:hover::after,
+.custom-grid-line.dragging::after {
+    background: #ff9800;
+    box-shadow: 0 0 10px rgba(255, 152, 0, 0.8);
+}
+
 /* 位置切图输入框 */
 .position-inputs {
     display: flex;
@@ -510,4 +665,188 @@
     border-radius: 4px;
     font-size: 12px;
     white-space: nowrap;
+}
+
+
+/* �߽����ʽ */
+.bounding-box {
+    position: absolute;
+    border: 2px solid #4caf50;
+    background: rgba(76, 175, 80, 0.1);
+    pointer-events: auto;
+    z-index: 10;
+    transition: all 0.2s ease;
+}
+
+.bounding-box:hover {
+    border-color: #ff9800;
+    background: rgba(255, 152, 0, 0.2);
+    box-shadow: 0 0 10px rgba(255, 152, 0, 0.3);
+}
+
+.bounding-box.selected {
+    border-color: #ff5722;
+    background: rgba(255, 87, 34, 0.3);
+    box-shadow: 0 0 15px rgba(255, 87, 34, 0.5);
+    transform: scale(1.02);
+}
+
+/* ������ */
+.highlight-box {
+    position: absolute;
+    border: 2px solid #ff9800;
+    background: rgba(255, 152, 0, 0.3);
+    pointer-events: none;
+    z-index: 20;
+}
+
+/* �ֶ��ϲ������ʽ */
+.manual-merge-controls .btn {
+    padding: 8px 16px;
+}
+
+/* 选项分组面板（紧凑横排） */
+.option-group {
+    margin-top: 12px;
+    padding: 12px;
+    border-radius: 8px;
+}
+
+.option-group-title {
+    font-size: 13px;
+    font-weight: bold;
+    color: #475569;
+    margin-bottom: 10px;
+}
+
+/* 分组头部：标题 + 展开按钮 */
+.option-group-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.option-group-head .option-group-title {
+    margin-bottom: 0;
+}
+
+.option-toggle {
+    background: none;
+    border: none;
+    color: #667eea;
+    font-size: 11px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.option-toggle:hover {
+    text-decoration: underline;
+    background: rgba(102, 126, 234, 0.08);
+}
+
+/* 分组说明（默认收起） */
+.option-desc {
+    display: none;
+    font-size: 11px;
+    color: #888;
+    line-height: 1.6;
+    margin-top: 8px;
+    margin-bottom: 10px;
+    padding: 8px 10px;
+    background: rgba(255, 255, 255, 0.5);
+    border-radius: 6px;
+    border: 1px dashed #d4d4d4;
+}
+
+.option-desc p {
+    margin: 0 0 4px 0;
+}
+
+.option-desc p:last-child {
+    margin-bottom: 0;
+}
+
+.option-group.expanded .option-desc {
+    display: block;
+}
+
+/* 横排开关行：自动换行 */
+.option-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+}
+
+/* 行内选项：开关 + 紧邻参数 */
+.inline-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+    font-size: 13px;
+    color: #475569;
+    cursor: pointer;
+}
+
+.inline-option input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+}
+
+.inline-inputs {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+}
+
+.inline-inputs label {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 12px;
+    color: #666;
+    white-space: nowrap;
+}
+
+.inline-inputs input[type="number"] {
+    width: 50px;
+    padding: 3px 6px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 12px;
+    text-align: center;
+    background: #fff;
+}
+
+.inline-inputs input[type="range"] {
+    width: 90px;
+    max-width: 90px;
+}
+
+.inline-inputs select {
+    padding: 2px 6px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 12px;
+    background: #fff;
+}
+
+.inline-inputs input[type="number"]:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+/* 分组底部提示 */
+.option-hint {
+    font-size: 11px;
+    color: #888;
+    margin-top: 6px;
+    line-height: 1.4;
 }
